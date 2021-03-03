@@ -238,6 +238,12 @@ TypeOK ==
 Inv ==
     /\ local_value = "ok" => status = "init" /\ remote_value = "accepted"
 
+InvAbortAfterAccepted ==
+    /\ \A w \in Worker: pc[w] = "AbortSaga" => remote_value = "accepted" \/ remote_value = "aborted"
+
+AcceptCanAfterAbort ==
+    /\ \A w \in Worker: pc[w] = "WorkerRPC" => remote_value /= "aborted"
+
 Completed ==
     /\ (\A p \in ProcSet: pc[p] = "Done") => status = "init"
 
