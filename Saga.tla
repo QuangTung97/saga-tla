@@ -7,7 +7,7 @@ ASSUME
     /\ ~(server \in Worker)
 
 RemoteValue == {"init", "accepted", "cancelled", "aborted"}
-Status == {"init", "requesting", "responsed", "waiting-aborted"}
+Status == {"init", "requesting", "waiting-aborted"}
 LocalValue == {"init", "ok"}
 
 (*--algorithm Saga
@@ -36,17 +36,19 @@ RPC:
     or
         goto Done;
     end either;
-Responsed:
-    if status /= "requesting" then
-        goto Done;
-    else
-        status := "responsed";
-    end if;
 DBWrite:
-    if status = "responsed" then
-        local_value := "ok";
-        status := "init";
+    if status = "requesting" then
+        either
+            local_value := "ok";
+            status := "init";
+            goto Done;
+        or
+            goto ServerDBWriteAborted;
+        end either;
     end if;
+
+ServerDBWriteAborted:
+    status := "init";
 end process;
 
 process worker \in Worker
@@ -56,8 +58,6 @@ StartWorker:
     CheckStatus:
         if status = "init" then
             goto StartWorker;
-        elsif status = "responsed" then
-            goto WorkerWaitAbort;
         elsif status = "waiting-aborted" then
             goto AbortSaga;
         end if;
@@ -74,16 +74,8 @@ StartWorker:
             goto DBWriteAborted;
         end if;
 
-    WorkerReponsed:
-        if status = "requesting" then
-            status := "responsed";
-            goto AbortSaga;
-        else
-            goto StartWorker;
-        end if;
-
     WorkerWaitAbort:
-        if status = "responsed" then
+        if status = "requesting" then
             status := "waiting-aborted";
             goto AbortSaga;
         else
@@ -105,7 +97,7 @@ end process;
 
 end algorithm;
 *)
-\* BEGIN TRANSLATION (chksum(pcal) = "c71d31ae" /\ chksum(tla) = "ce15ee88")
+\* BEGIN TRANSLATION (chksum(pcal) = "d396aef5" /\ chksum(tla) = "2da0ce8f")
 VARIABLES remote_value, status, local_value, pc
 
 vars == << remote_value, status, local_value, pc >>
@@ -127,7 +119,7 @@ StartRequest == /\ pc[server] = "StartRequest"
 RPC == /\ pc[server] = "RPC"
        /\ \/ /\ IF remote_value = "init"
                    THEN /\ remote_value' = "accepted"
-                        /\ pc' = [pc EXCEPT ![server] = "Responsed"]
+                        /\ pc' = [pc EXCEPT ![server] = "DBWrite"]
                    ELSE /\ pc' = [pc EXCEPT ![server] = "Done"]
                         /\ UNCHANGED remote_value
           \/ /\ IF remote_value = "init"
@@ -139,24 +131,23 @@ RPC == /\ pc[server] = "RPC"
              /\ UNCHANGED remote_value
        /\ UNCHANGED << status, local_value >>
 
-Responsed == /\ pc[server] = "Responsed"
-             /\ IF status /= "requesting"
-                   THEN /\ pc' = [pc EXCEPT ![server] = "Done"]
-                        /\ UNCHANGED status
-                   ELSE /\ status' = "responsed"
-                        /\ pc' = [pc EXCEPT ![server] = "DBWrite"]
-             /\ UNCHANGED << remote_value, local_value >>
-
 DBWrite == /\ pc[server] = "DBWrite"
-           /\ IF status = "responsed"
-                 THEN /\ local_value' = "ok"
-                      /\ status' = "init"
-                 ELSE /\ TRUE
+           /\ IF status = "requesting"
+                 THEN /\ \/ /\ local_value' = "ok"
+                            /\ status' = "init"
+                            /\ pc' = [pc EXCEPT ![server] = "Done"]
+                         \/ /\ pc' = [pc EXCEPT ![server] = "ServerDBWriteAborted"]
+                            /\ UNCHANGED <<status, local_value>>
+                 ELSE /\ pc' = [pc EXCEPT ![server] = "ServerDBWriteAborted"]
                       /\ UNCHANGED << status, local_value >>
-           /\ pc' = [pc EXCEPT ![server] = "Done"]
            /\ UNCHANGED remote_value
 
-serverProc == StartRequest \/ RPC \/ Responsed \/ DBWrite
+ServerDBWriteAborted == /\ pc[server] = "ServerDBWriteAborted"
+                        /\ status' = "init"
+                        /\ pc' = [pc EXCEPT ![server] = "Done"]
+                        /\ UNCHANGED << remote_value, local_value >>
+
+serverProc == StartRequest \/ RPC \/ DBWrite \/ ServerDBWriteAborted
 
 StartWorker(self) == /\ pc[self] = "StartWorker"
                      /\ pc' = [pc EXCEPT ![self] = "CheckStatus"]
@@ -165,11 +156,9 @@ StartWorker(self) == /\ pc[self] = "StartWorker"
 CheckStatus(self) == /\ pc[self] = "CheckStatus"
                      /\ IF status = "init"
                            THEN /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
-                           ELSE /\ IF status = "responsed"
-                                      THEN /\ pc' = [pc EXCEPT ![self] = "WorkerWaitAbort"]
-                                      ELSE /\ IF status = "waiting-aborted"
-                                                 THEN /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
-                                                 ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerRPC"]
+                           ELSE /\ IF status = "waiting-aborted"
+                                      THEN /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
+                                      ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerRPC"]
                      /\ UNCHANGED << remote_value, status, local_value >>
 
 WorkerRPC(self) == /\ pc[self] = "WorkerRPC"
@@ -177,23 +166,15 @@ WorkerRPC(self) == /\ pc[self] = "WorkerRPC"
                          THEN /\ \/ /\ remote_value' = "cancelled"
                                     /\ pc' = [pc EXCEPT ![self] = "DBWriteAborted"]
                                  \/ /\ remote_value' = "accepted"
-                                    /\ pc' = [pc EXCEPT ![self] = "WorkerReponsed"]
+                                    /\ pc' = [pc EXCEPT ![self] = "WorkerWaitAbort"]
                          ELSE /\ IF remote_value \in {"cancelled", "aborted"}
                                     THEN /\ pc' = [pc EXCEPT ![self] = "DBWriteAborted"]
-                                    ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerReponsed"]
+                                    ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerWaitAbort"]
                               /\ UNCHANGED remote_value
                    /\ UNCHANGED << status, local_value >>
 
-WorkerReponsed(self) == /\ pc[self] = "WorkerReponsed"
-                        /\ IF status = "requesting"
-                              THEN /\ status' = "responsed"
-                                   /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
-                              ELSE /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
-                                   /\ UNCHANGED status
-                        /\ UNCHANGED << remote_value, local_value >>
-
 WorkerWaitAbort(self) == /\ pc[self] = "WorkerWaitAbort"
-                         /\ IF status = "responsed"
+                         /\ IF status = "requesting"
                                THEN /\ status' = "waiting-aborted"
                                     /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
                                ELSE /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
@@ -213,8 +194,8 @@ DBWriteAborted(self) == /\ pc[self] = "DBWriteAborted"
                         /\ UNCHANGED << remote_value, local_value >>
 
 worker(self) == StartWorker(self) \/ CheckStatus(self) \/ WorkerRPC(self)
-                   \/ WorkerReponsed(self) \/ WorkerWaitAbort(self)
-                   \/ AbortSaga(self) \/ DBWriteAborted(self)
+                   \/ WorkerWaitAbort(self) \/ AbortSaga(self)
+                   \/ DBWriteAborted(self)
 
 (* Allow infinite stuttering to prevent deadlock on termination. *)
 Terminating == /\ \A self \in ProcSet: pc[self] = "Done"
