@@ -249,7 +249,11 @@ InvWorker ==
 Completed ==
     /\ (\A p \in ProcSet: pc[p] = "Done") => status = "committed" \/ status = "aborted"
 
-Term == local_value /= "ok"
+Term1 == local_value /= "ok"
+
+Term2 == status /= "aborted"
+
+Term3 == ~(\A p \in ProcSet: pc[p] = "Done")
 
 Perms == Permutations(Worker)
 
