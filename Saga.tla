@@ -97,14 +97,18 @@ StartWorker:
         remote_value := "aborted";
 
     DBWriteAborted:
-        status := "aborted";
-        goto Done;
+        either
+            status := "aborted";
+            goto Done;
+        or
+            goto StartWorker;
+        end either;
     end while;
 end process;
 
 end algorithm;
 *)
-\* BEGIN TRANSLATION (chksum(pcal) = "334f79a9" /\ chksum(tla) = "9123df7d")
+\* BEGIN TRANSLATION (chksum(pcal) = "ece3ff65" /\ chksum(tla) = "f3aa3bec")
 VARIABLES remote_value, status, local_value, pc
 
 vars == << remote_value, status, local_value, pc >>
@@ -207,8 +211,10 @@ AbortSaga(self) == /\ pc[self] = "AbortSaga"
                    /\ UNCHANGED << status, local_value >>
 
 DBWriteAborted(self) == /\ pc[self] = "DBWriteAborted"
-                        /\ status' = "aborted"
-                        /\ pc' = [pc EXCEPT ![self] = "Done"]
+                        /\ \/ /\ status' = "aborted"
+                              /\ pc' = [pc EXCEPT ![self] = "Done"]
+                           \/ /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
+                              /\ UNCHANGED status
                         /\ UNCHANGED << remote_value, local_value >>
 
 worker(self) == StartWorker(self) \/ CheckStatus(self) \/ WorkerRPC(self)
