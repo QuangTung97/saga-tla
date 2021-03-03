@@ -7,8 +7,7 @@ ASSUME
     /\ ~(server \in Worker)
 
 RemoteValue == {"init", "accepted", "cancelled", "aborted"}
-Status == {"init", "requesting", "responsed",
-    "waiting-aborted", "aborted", "committed"}
+Status == {"init", "requesting", "responsed", "waiting-aborted"}
 LocalValue == {"init", "ok"}
 
 (*--algorithm Saga
@@ -46,7 +45,7 @@ Responsed:
 DBWrite:
     if status = "responsed" then
         local_value := "ok";
-        status := "committed";
+        status := "init";
     end if;
 end process;
 
@@ -55,9 +54,7 @@ begin
 StartWorker:
     while TRUE do
     CheckStatus:
-        if status \in {"aborted", "committed"} then
-            goto Done;
-        elsif status = "init" then
+        if status = "init" then
             goto StartWorker;
         elsif status = "responsed" then
             goto WorkerWaitAbort;
@@ -98,7 +95,7 @@ StartWorker:
 
     DBWriteAborted:
         either
-            status := "aborted";
+            status := "init";
             goto Done;
         or
             goto StartWorker;
@@ -108,7 +105,7 @@ end process;
 
 end algorithm;
 *)
-\* BEGIN TRANSLATION (chksum(pcal) = "ece3ff65" /\ chksum(tla) = "f3aa3bec")
+\* BEGIN TRANSLATION (chksum(pcal) = "c71d31ae" /\ chksum(tla) = "ce15ee88")
 VARIABLES remote_value, status, local_value, pc
 
 vars == << remote_value, status, local_value, pc >>
@@ -153,7 +150,7 @@ Responsed == /\ pc[server] = "Responsed"
 DBWrite == /\ pc[server] = "DBWrite"
            /\ IF status = "responsed"
                  THEN /\ local_value' = "ok"
-                      /\ status' = "committed"
+                      /\ status' = "init"
                  ELSE /\ TRUE
                       /\ UNCHANGED << status, local_value >>
            /\ pc' = [pc EXCEPT ![server] = "Done"]
@@ -166,15 +163,13 @@ StartWorker(self) == /\ pc[self] = "StartWorker"
                      /\ UNCHANGED << remote_value, status, local_value >>
 
 CheckStatus(self) == /\ pc[self] = "CheckStatus"
-                     /\ IF status \in {"aborted", "committed"}
-                           THEN /\ pc' = [pc EXCEPT ![self] = "Done"]
-                           ELSE /\ IF status = "init"
-                                      THEN /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
-                                      ELSE /\ IF status = "responsed"
-                                                 THEN /\ pc' = [pc EXCEPT ![self] = "WorkerWaitAbort"]
-                                                 ELSE /\ IF status = "waiting-aborted"
-                                                            THEN /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
-                                                            ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerRPC"]
+                     /\ IF status = "init"
+                           THEN /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
+                           ELSE /\ IF status = "responsed"
+                                      THEN /\ pc' = [pc EXCEPT ![self] = "WorkerWaitAbort"]
+                                      ELSE /\ IF status = "waiting-aborted"
+                                                 THEN /\ pc' = [pc EXCEPT ![self] = "AbortSaga"]
+                                                 ELSE /\ pc' = [pc EXCEPT ![self] = "WorkerRPC"]
                      /\ UNCHANGED << remote_value, status, local_value >>
 
 WorkerRPC(self) == /\ pc[self] = "WorkerRPC"
@@ -211,7 +206,7 @@ AbortSaga(self) == /\ pc[self] = "AbortSaga"
                    /\ UNCHANGED << status, local_value >>
 
 DBWriteAborted(self) == /\ pc[self] = "DBWriteAborted"
-                        /\ \/ /\ status' = "aborted"
+                        /\ \/ /\ status' = "init"
                               /\ pc' = [pc EXCEPT ![self] = "Done"]
                            \/ /\ pc' = [pc EXCEPT ![self] = "StartWorker"]
                               /\ UNCHANGED status
@@ -241,19 +236,14 @@ TypeOK ==
     /\ local_value \in LocalValue
 
 Inv ==
-    /\ local_value = "ok" => status = "committed" /\ remote_value = "accepted"
-
-InvWorker ==
-    /\ status = "aborted" => remote_value = "aborted" \/ remote_value = "cancelled"
+    /\ local_value = "ok" => status = "init" /\ remote_value = "accepted"
 
 Completed ==
-    /\ (\A p \in ProcSet: pc[p] = "Done") => status = "committed" \/ status = "aborted"
+    /\ (\A p \in ProcSet: pc[p] = "Done") => status = "init"
 
 Term1 == local_value /= "ok"
 
-Term2 == status /= "aborted"
-
-Term3 == ~(\A p \in ProcSet: pc[p] = "Done")
+Term2 == ~(\A p \in ProcSet: pc[p] = "Done")
 
 Perms == Permutations(Worker)
 
