@@ -32,7 +32,11 @@ RPC:
         if remote_value = "init" then
             remote_value := "cancelled";
         end if;
-        goto Done;
+        either
+            goto Done;
+        or
+            goto ServerDBWriteAborted;
+        end either;
     or
         goto Done;
     end either;
@@ -97,7 +101,7 @@ end process;
 
 end algorithm;
 *)
-\* BEGIN TRANSLATION (chksum(pcal) = "d396aef5" /\ chksum(tla) = "2da0ce8f")
+\* BEGIN TRANSLATION (chksum(pcal) = "168fc069" /\ chksum(tla) = "959f7ad9")
 VARIABLES remote_value, status, local_value, pc
 
 vars == << remote_value, status, local_value, pc >>
@@ -126,7 +130,8 @@ RPC == /\ pc[server] = "RPC"
                    THEN /\ remote_value' = "cancelled"
                    ELSE /\ TRUE
                         /\ UNCHANGED remote_value
-             /\ pc' = [pc EXCEPT ![server] = "Done"]
+             /\ \/ /\ pc' = [pc EXCEPT ![server] = "Done"]
+                \/ /\ pc' = [pc EXCEPT ![server] = "ServerDBWriteAborted"]
           \/ /\ pc' = [pc EXCEPT ![server] = "Done"]
              /\ UNCHANGED remote_value
        /\ UNCHANGED << status, local_value >>
