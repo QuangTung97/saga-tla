@@ -217,7 +217,10 @@ TypeOK ==
     /\ local_value \in LocalValue
 
 Inv ==
-    /\ local_value = "ok" => status = "init" /\ remote_value = "accepted"
+    /\ local_value = "ok" =>
+        /\ status = "init"
+        /\ remote_value = "accepted"
+        /\ (\A w \in Worker: pc[w] /= "Done")
 
 InvAbortAfterAccepted ==
     /\ \A w \in Worker: pc[w] = "AbortSaga" => remote_value = "accepted" \/ remote_value = "aborted"
@@ -226,11 +229,14 @@ AcceptCanAfterAbort ==
     /\ \A w \in Worker: pc[w] = "WorkerRPC" => remote_value /= "aborted"
 
 Completed ==
-    /\ (\A p \in ProcSet: pc[p] = "Done") => status = "init"
+    /\ pc[server] = "Done" /\ (\E w \in Worker: pc[w] = "Done") =>
+        status = "init" /\ (remote_value = "cancelled"  \/ remote_value = "aborted")
 
 Term1 == local_value /= "ok"
 
 Term2 == ~(\A p \in ProcSet: pc[p] = "Done")
+
+Term3 == ~(pc[server] = "Done" /\ \E w \in Worker: pc[w] = "Done")
 
 Perms == Permutations(Worker)
 
